@@ -3,24 +3,23 @@ const app = express();
 const http = require("http").createServer(app);
 
 const io = require("socket.io")(http,{
-    cors:{
-        origin:"*"
-    }
+    cors:{ origin:"*" }
 });
 
 let users = {};
+let calls = {};   // store active calls
 
 io.on("connection",socket=>{
 
     console.log("User Connected:",socket.id);
 
-    // REGISTER USER
+    // REGISTER
     socket.on("register",id=>{
 
-        users[id]=socket.id;
-        socket.userId=id;
+        users[id] = socket.id;
+        socket.userId = id;
 
-        console.log(id+" registered");
+        console.log(id + " registered");
 
     });
 
@@ -29,7 +28,8 @@ io.on("connection",socket=>{
 
         if(users[target]){
 
-            console.log("Calling "+target);
+            // store caller
+            calls[target] = socket.userId;
 
             io.to(users[target]).emit("incoming-call",socket.userId);
 
@@ -38,43 +38,37 @@ io.on("connection",socket=>{
     });
 
     // OFFER
-    socket.on("offer",(target,data)=>{
-
-        if(users[target]){
-            io.to(users[target]).emit("offer",data);
-        }
-
+    socket.on("offer",data=>{
+        socket.broadcast.emit("offer",data);
     });
 
     // ANSWER
-    socket.on("answer",(target,data)=>{
-
-        if(users[target]){
-            io.to(users[target]).emit("answer",data);
-        }
-
+    socket.on("answer",data=>{
+        socket.broadcast.emit("answer",data);
     });
 
     // ICE
-    socket.on("ice",(target,mid,index,candidate)=>{
-
-        if(users[target]){
-            io.to(users[target]).emit("ice",mid,index,candidate);
-        }
-
+    socket.on("ice",(mid,index,candidate)=>{
+        socket.broadcast.emit("ice",mid,index,candidate);
     });
 
-    // CALL REJECTED
-    socket.on("call-rejected",(callerId)=>{
+    // REJECT CALL
+    socket.on("call-rejected",()=>{
 
-        if(users[callerId]){
-            io.to(users[callerId]).emit("call-rejected");
+        let caller = calls[socket.userId];
+
+        if(caller && users[caller]){
+
+            io.to(users[caller]).emit("call-rejected");
+
         }
+
+        delete calls[socket.userId];
 
     });
 
     // END CALL
-    socket.on("end-call",(target)=>{
+    socket.on("end-call",target=>{
 
         if(users[target]){
             io.to(users[target]).emit("end-call");
@@ -84,11 +78,11 @@ io.on("connection",socket=>{
 
     socket.on("disconnect",()=>{
 
-        console.log("User Disconnected");
-
         if(socket.userId){
             delete users[socket.userId];
         }
+
+        console.log("User Disconnected");
 
     });
 
@@ -97,5 +91,5 @@ io.on("connection",socket=>{
 const PORT = process.env.PORT || 3000;
 
 http.listen(PORT,()=>{
-    console.log("✅ Server running on port "+PORT);
+    console.log("Server running on port "+PORT);
 });
